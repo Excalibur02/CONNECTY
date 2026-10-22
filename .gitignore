@@ -1,0 +1,25 @@
+# Python
+venv/
+server/venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+
+# Connecty runtime data
+.connecty_data/transfers_staging/
+.connecty_data/connecty.db
+.connecty_data/connecty.db-journal
+
+# Android build artifacts
+android-client/.gradle/
+android-client/build/
+android-client/app/build/
+android-client/local.properties
+*.apk
+*.aab
+
+# Node & IDE
+node_modules/
+.idea/
+.vscode/

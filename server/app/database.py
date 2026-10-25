@@ -41,16 +41,18 @@ def init_db():
                 token TEXT NOT NULL,
                 status TEXT DEFAULT 'approved',
                 role TEXT DEFAULT 'full',
-                last_seen REAL
+                last_seen REAL,
+                pairing_type TEXT DEFAULT 'permanent',
+                expires_at REAL
             )
         """)
         
         conn.execute("""
             CREATE TABLE IF NOT EXISTS pairing_pins (
-                pin TEXT PRIMARY KEY,
-                created_at REAL,
-                expires_at REAL
-            )
+            pin TEXT PRIMARY KEY,
+            created_at REAL,
+            expires_at REAL
+        )
         """)
         
         conn.execute("""
@@ -88,7 +90,35 @@ def init_db():
                     "This file is being served directly from your laptop to your local network.\n"
                     "You can stream videos, download files, and upload photos/documents securely.\n"
                 )
+        
+        _migrate_paired_devices(conn)
     conn.close()
+
+def _migrate_paired_devices(conn):
+    """Add pairing_type / expires_at columns to existing paired_devices tables."""
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(paired_devices)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "pairing_type" not in existing:
+        conn.execute("ALTER TABLE paired_devices ADD COLUMN pairing_type TEXT DEFAULT 'permanent'")
+    if "expires_at" not in existing:
+        conn.execute("ALTER TABLE paired_devices ADD COLUMN expires_at REAL")
+    # Backfill any NULL pairing_type rows as permanent
+    conn.execute("UPDATE paired_devices SET pairing_type = 'permanent' WHERE pairing_type IS NULL")
+
+def cleanup_temporary_pairings() -> int:
+    """Remove temporary pairings so they do not survive a server restart."""
+    conn = get_db()
+    with conn:
+        now = time.time()
+        cursor = conn.execute("""
+            DELETE FROM paired_devices
+            WHERE pairing_type = 'temporary'
+               OR (expires_at IS NOT NULL AND expires_at < ?)
+        """, (now,))
+        removed = cursor.rowcount
+    conn.close()
+    return removed
 
 # Shared Folders Helpers
 def get_shared_folders(only_active: bool = True) -> List[Dict[str, Any]]:
@@ -183,24 +213,41 @@ def verify_pairing_pin(pin: str) -> bool:
     conn.close()
     return row is not None
 
-def register_paired_device(device_id: str, name: str, platform: str, role: str = "full") -> str:
+def register_paired_device(device_id: str, name: str, platform: str, role: str = "full", pairing_type: str = "permanent", expires_at: Optional[float] = None) -> str:
     token = secrets.token_urlsafe(32)
     conn = get_db()
     with conn:
         conn.execute("""
-            INSERT OR REPLACE INTO paired_devices (device_id, name, platform, token, status, role, last_seen)
-            VALUES (?, ?, ?, ?, 'approved', ?, ?)
-        """, (device_id, name, platform, token, role, time.time()))
+            INSERT OR REPLACE INTO paired_devices (device_id, name, platform, token, status, role, last_seen, pairing_type, expires_at)
+            VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?)
+        """, (device_id, name, platform, token, role, time.time(), pairing_type, expires_at))
     conn.close()
     return token
 
 def get_device_by_token(token: str) -> Optional[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
+    now = time.time()
     cursor.execute("SELECT * FROM paired_devices WHERE token = ? AND status = 'approved'", (token,))
     row = cursor.fetchone()
     conn.close()
-    return dict(row) if row else None
+    if not row:
+        return None
+    device = dict(row)
+    expires_at = device.get("expires_at")
+    if expires_at is not None and now > expires_at:
+        return None
+    return device
+
+def set_device_pairing_type(device_id: str, pairing_type: str) -> bool:
+    if pairing_type not in ("temporary", "permanent"):
+        return False
+    conn = get_db()
+    with conn:
+        cursor = conn.execute("UPDATE paired_devices SET pairing_type = ? WHERE device_id = ?", (pairing_type, device_id))
+        success = cursor.rowcount > 0
+    conn.close()
+    return success
 
 def update_device_last_seen(device_id: str):
     conn = get_db()
@@ -211,7 +258,7 @@ def update_device_last_seen(device_id: str):
 def list_paired_devices() -> List[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT device_id, name, platform, status, role, last_seen FROM paired_devices ORDER BY last_seen DESC")
+    cursor.execute("SELECT device_id, name, platform, status, role, last_seen, pairing_type, expires_at FROM paired_devices ORDER BY last_seen DESC")
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return rows

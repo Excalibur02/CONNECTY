@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 
 from server.app.config import settings
-from server.app.database import init_db, generate_pairing_pin
+from server.app.database import init_db, generate_pairing_pin, cleanup_temporary_pairings
 from server.app.services.discovery import discovery_service
 from server.app.api.device import router as device_router
 from server.app.api.files import router as files_router
@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting CONNECTY Server...")
     init_db()
     generate_pairing_pin()
+    removed = cleanup_temporary_pairings()
+    if removed:
+        logger.info(f"Cleared {removed} temporary pairing(s) on server startup")
     discovery_service.start()
     logger.info(f"CONNECTY running at http://{settings.LAN_IP}:{settings.PORT}")
     logger.info(f"Base data directory: {settings.BASE_DIR.resolve()}")

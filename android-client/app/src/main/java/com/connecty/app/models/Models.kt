@@ -16,7 +16,8 @@ data class PairingRequest(
     val device_name: String,
     val platform: String = "android",
     val pin_code: String,
-    val requested_role: String = "full"
+    val requested_role: String = "full",
+    val pairing_type: String = "permanent"
 )
 
 data class PairingResponse(
@@ -24,7 +25,8 @@ data class PairingResponse(
     val device_id: String,
     val device_name: String,
     val role: String,
-    val token: String
+    val token: String,
+    val pairing_type: String = "permanent"
 )
 
 data class SharedFolder(

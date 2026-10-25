@@ -86,6 +86,11 @@ def get_embedded_ui_html() -> str:
                  class="w-48 text-center text-2xl font-mono tracking-widest bg-slate-900 border border-cyan-500/40 rounded-xl px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400">
           <input type="text" id="manual-device-name-input" maxlength="100" placeholder="My Device" 
                  class="w-48 text-center text-2xl font-mono tracking-widest bg-slate-900 border border-cyan-500/40 rounded-xl px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400">
+          <select id="manual-pairing-type-input"
+                 class="bg-slate-800 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none">
+            <option value="permanent">Permanent</option>
+            <option value="temporary">Temporary (cleared on restart)</option>
+          </select>
         </div>
         <button onclick="submitPairing()" class="w-full max-w-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl transition shadow-lg shadow-cyan-500/20">
           Pair Device
@@ -335,7 +340,8 @@ def get_embedded_ui_html() -> str:
             device_name: deviceName,
             platform: "browser",
             pin_code: pin,
-            requested_role: "full"
+            requested_role: "full",
+            pairing_type: document.getElementById("manual-pairing-type-input").value
           })
         });
         
@@ -708,19 +714,27 @@ def get_embedded_ui_html() -> str:
             container.innerHTML = `<p class="text-xs text-slate-500 text-center py-4">No devices paired yet.</p>`;
             return;
           }
-          container.innerHTML = data.devices.map(d => `
+          container.innerHTML = data.devices.map(d => {
+            const isTemp = d.pairing_type === 'temporary';
+            return `
             <div class="glass-card p-3 rounded-xl flex items-center justify-between">
               <div>
                 <p class="text-sm font-semibold text-white">${escapeHtml(d.name)}</p>
-                <p class="text-xs text-slate-400">ID: ${d.device_id.substring(0, 12)}... • Role: <span class="text-cyan-400">${d.role}</span> • Status: ${d.status}</p>
+                <p class="text-xs text-slate-400">ID: ${d.device_id.substring(0, 12)}... • Role: <span class="text-cyan-400">${d.role}</span> • Status: ${d.status} • Type: <span class="text-xs font-semibold ${isTemp ? 'text-rose-400' : 'text-emerald-400'}">${isTemp ? 'Temporary' : 'Permanent'}</span></p>
               </div>
-              ${d.status === 'approved' ? `
-                <button onclick="revokeDevice('${d.device_id}')" class="px-2.5 py-1 text-xs bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg border border-rose-800 transition">
-                  Revoke
-                </button>
-              ` : `<span class="text-xs text-slate-500">Revoked</span>`}
+              <div class="flex items-center gap-2">
+                ${d.status === 'approved' ? `
+                  <button onclick="togglePairingType('${d.device_id}', '${isTemp ? 'permanent' : 'temporary'}')" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition">
+                    ${isTemp ? 'Make Permanent' : 'Make Temporary'}
+                  </button>
+                  <button onclick="revokeDevice('${d.device_id}')" class="px-2.5 py-1 text-xs bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg border border-rose-800 transition">
+                    Revoke
+                  </button>
+                ` : `<span class="text-xs text-slate-500">Revoked</span>`}
+              </div>
             </div>
-          `).join("");
+          `;
+          }).join("");
         }
       } catch (e) {}
     }
@@ -733,6 +747,22 @@ def get_embedded_ui_html() -> str:
       });
       if (res.ok) {
         loadPairedDevices();
+      }
+    }
+
+    async function togglePairingType(devId, newType) {
+      const res = await fetch(`/api/v1/devices/${devId}/pairing-type`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(activeToken ? { "X-Device-Token": activeToken } : {})
+        },
+        body: JSON.stringify({ pairing_type: newType })
+      });
+      if (res.ok) {
+        loadPairedDevices();
+      } else {
+        alert("Failed to update pairing type");
       }
     }
 

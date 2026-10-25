@@ -25,7 +25,7 @@ If mDNS multicast packets are dropped due to router AP isolation or multicast fi
 ## 3. Trust & Pairing Model
 To protect personal files from unauthorized access on shared home networks, every non-localhost client must pair before browsing or uploading files:
 1. The host laptop generates a dynamic 6-digit PIN and displays it on screen along with an encoded QR code.
-2. The client submits `POST /api/v1/pairing/request` with `pin_code`, `device_id`, and `requested_role`.
+2. The client submits `POST /api/v1/pairing/request` with `pin_code`, `device_id`, `requested_role`, and `pairing_type`.
 3. If the PIN is verified, the host issues a cryptographically secure revocable `token`.
 4. Subsequent client requests include the header:
    ```http
@@ -38,8 +38,21 @@ To protect personal files from unauthorized access on shared home networks, ever
 5. Roles:
    - `full`: Can browse, download, and upload files (for phones / tablets).
    - `read-only`: Can browse and stream media only (for Google TV).
+6. Pairing types:
+   - `permanent` (default): The device record and token persist in `connecty.db`, so the device can reconnect directly after the server restarts without re-entering the PIN. Access can be revoked anytime via `POST /api/v1/devices/{device_id}/revoke`.
+   - `temporary`: The pairing is cleared when the server stops/restarts. The device must re-pair with a fresh PIN on the next server startup. Use this for guests or short-term access.
 
----
+### Pairing API
+- **`POST /api/v1/pairing/request`**
+  - Request body: `{ "device_id", "device_name", "platform", "pin_code", "requested_role", "pairing_type" }`
+  - `pairing_type`: `"permanent"` or `"temporary"` (default `"permanent"`)
+  - Response: `{ "status": "paired", "device_id", "device_name", "role", "token", "pairing_type" }`
+- **`GET /api/v1/devices`**
+  - Lists authorized devices and status (approved, revoked), now including each device's `pairing_type`.
+- **`POST /api/v1/devices/{device_id}/pairing-type`**
+  - Body: `{ "pairing_type": "temporary" | "permanent" }`. Flip a device between temporary and permanent without re-pairing.
+- **`POST /api/v1/devices/{device_id}/revoke`**
+  - Revokes an authorized device's access immediately.
 
 ## 4. API Endpoints
 

@@ -17,7 +17,8 @@ from server.app.database import (
     list_paired_devices,
     revoke_device,
     generate_pairing_pin,
-    get_db
+    get_db,
+    set_device_pairing_type,
 )
 from server.app.security.auth import get_current_device
 from server.app.services.discovery import discovery_service
@@ -30,9 +31,13 @@ class PairingRequest(BaseModel):
     platform: str = "android"  # android, tv, web, windows, etc.
     pin_code: str
     requested_role: str = "full"  # 'full' (phone) or 'read-only' (tv)
+    pairing_type: str = "temporary"  # 'permanent' survives server restarts; 'temporary' is cleared on restart
 
 class RoleUpdateRequest(BaseModel):
     role: str  # 'full' or 'read-only'
+
+class PairingTypeUpdateRequest(BaseModel):
+    pairing_type: str  # 'temporary' or 'permanent'
 
 @router.get("/device")
 async def get_device_info():
@@ -99,11 +104,18 @@ async def request_pairing(body: PairingRequest):
         
     role = "read-only" if body.requested_role == "read-only" else "full"
     
+    if body.pairing_type not in ("temporary", "permanent"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="pairing_type must be 'temporary' or 'permanent'"
+        )
+    
     token = register_paired_device(
         device_id=body.device_id,
         name=body.device_name,
         platform=body.platform,
-        role=role
+        role=role,
+        pairing_type=body.pairing_type
     ) 
     logger.info(f"Device full info: {body}")
     logger.info(f"Device name: {body.device_name}")
@@ -112,7 +124,8 @@ async def request_pairing(body: PairingRequest):
         "device_id": body.device_id,
         "device_name": body.device_name,
         "role": role,
-        "token": token
+        "token": token,
+        "pairing_type": body.pairing_type
     }
 
 @router.get("/devices")
@@ -152,6 +165,20 @@ async def update_device_role(
             raise HTTPException(status_code=404, detail="Device not found")
     conn.close()
     return {"status": "updated", "device_id": device_id, "role": body.role}
+
+@router.post("/devices/{device_id}/pairing-type")
+async def update_device_pairing_type(
+    device_id: str,
+    body: PairingTypeUpdateRequest,
+    current_device: Dict[str, Any] = Depends(get_current_device)
+):
+    """Change a device's pairing type ('temporary' cleared on restart, 'permanent' persists)."""
+    if body.pairing_type not in ("temporary", "permanent"):
+        raise HTTPException(status_code=400, detail="pairing_type must be 'temporary' or 'permanent'")
+    success = set_device_pairing_type(device_id, body.pairing_type)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found")
+    return {"status": "updated", "device_id": device_id, "pairing_type": body.pairing_type}
 
 @router.get("/discovery/peers")
 async def get_discovered_peers():

@@ -4,7 +4,7 @@ import shutil
 from fastapi.testclient import TestClient
 from server.app.main import app
 from server.app.config import settings
-from server.app.database import init_db, get_active_pin, get_shared_folders
+from server.app.database import init_db, get_active_pin, get_shared_folders, cleanup_temporary_pairings
 
 @pytest.fixture(autouse=True)
 def setup_isolated_test_env(tmp_path, monkeypatch):
@@ -212,4 +212,89 @@ def test_change_shared_folder(client, tmp_path):
         "path": "Z:\\This\\Path\\Does\\Not\\Exist"
     })
     assert bad_res.status_code == 400
+
+def test_pairing_accepts_pairing_type(client):
+    pin = get_active_pin()
+    res = client.post("/api/v1/pairing/request", json={
+        "device_id": "test_pairing_type_phone",
+        "device_name": "Type Phone",
+        "platform": "android",
+        "pin_code": pin,
+        "pairing_type": "temporary"
+    })
+    assert res.status_code == 200
+    assert res.json()["pairing_type"] == "temporary"
+
+def test_invalid_pairing_type_rejected(client):
+    pin = get_active_pin()
+    res = client.post("/api/v1/pairing/request", json={
+        "device_id": "test_bad_pairing_type",
+        "device_name": "Bad",
+        "platform": "android",
+        "pin_code": pin,
+        "pairing_type": "forever"
+    })
+    assert res.status_code == 400
+
+def test_permanent_pairing_survives_restart(client):
+    pin = get_active_pin()
+    pair_res = client.post("/api/v1/pairing/request", json={
+        "device_id": "test_perm_phone",
+        "device_name": "Permanent Phone",
+        "platform": "android",
+        "pin_code": pin,
+        "pairing_type": "permanent"
+    })
+    assert pair_res.status_code == 200
+    token = pair_res.json()["token"]
+
+    # Simulate server restart: temporary pairings are wiped
+    cleanup_temporary_pairings()
+
+    folders_res = client.get("/api/v1/folders", headers={"X-Device-Token": token})
+    assert folders_res.status_code == 200
+    assert len(folders_res.json()["folders"]) >= 1
+
+def test_temporary_pairing_cleared_on_restart(client):
+    pin = get_active_pin()
+    pair_res = client.post("/api/v1/pairing/request", json={
+        "device_id": "test_temp_phone",
+        "device_name": "Temporary Phone",
+        "platform": "android",
+        "pin_code": pin,
+        "pairing_type": "temporary"
+    })
+    assert pair_res.status_code == 200
+    token = pair_res.json()["token"]
+
+    before = client.get("/api/v1/folders", headers={"X-Device-Token": token})
+    assert before.status_code == 200
+
+    cleanup_temporary_pairings()  # simulate server restart
+
+    after = client.get("/api/v1/folders", headers={"X-Device-Token": token})
+    assert after.status_code == 401
+
+def test_update_pairing_type_endpoint(client):
+    pin = get_active_pin()
+    pair_res = client.post("/api/v1/pairing/request", json={
+        "device_id": "test_flip_phone",
+        "device_name": "Flip Phone",
+        "platform": "android",
+        "pin_code": pin,
+        "pairing_type": "temporary"
+    })
+    assert pair_res.status_code == 200
+    token = pair_res.json()["token"]
+
+    flip = client.post("/api/v1/devices/test_flip_phone/pairing-type",
+                       json={"pairing_type": "permanent"},
+                       headers={"X-Device-Token": token})
+    assert flip.status_code == 200
+    assert flip.json()["pairing_type"] == "permanent"
+
+    # Now it survives restart
+    cleanup_temporary_pairings()
+    folders_res = client.get("/api/v1/folders", headers={"X-Device-Token": token})
+    assert folders_res.status_code == 200
 

@@ -113,13 +113,33 @@ def get_embedded_ui_html() -> str:
 
     <!-- TAB 1: Shared Files Explorer -->
     <div id="view-files" class="space-y-4">
-      <!-- Folder Selector & Breadcrumbs -->
+      <!-- Folder Selector & Breadcrumbs (TV-friendly custom picker) -->
+      <style>
+        #folder-picker-panel { display:none; position:absolute; z-index:200; top:100%; left:0; min-width:220px;
+          background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:6px;
+          box-shadow:0 12px 40px rgba(0,0,0,0.5); margin-top:4px; }
+        #folder-picker-panel button { display:flex; width:100%; text-align:left; padding:9px 12px;
+          border-radius:8px; font-size:13px; color:#cbd5e1; background:transparent; border:none;
+          cursor:pointer; transition:background 0.15s; }
+        #folder-picker-panel button:hover, #folder-picker-panel button:focus {
+          background:rgba(6,182,212,0.15); color:#06b6d4; outline:none; }
+        #folder-picker-panel button.active { background:rgba(6,182,212,0.2); color:#06b6d4; font-weight:600; }
+      </style>
       <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-        <div class="flex items-center space-x-2">
+        <div class="flex items-center space-x-2" style="position:relative;">
           <label class="text-xs text-slate-400">Share:</label>
-          <select id="folder-select" onchange="onFolderChange(this.value)" class="bg-slate-800 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none">
-            <option value="default">Default Share</option>
-          </select>
+          <!-- Hidden native select kept for API compatibility -->
+          <select id="folder-select" class="hidden" aria-hidden="true"></select>
+          <!-- Custom TV-friendly picker -->
+          <button id="folder-picker-btn" onclick="toggleFolderPicker()"
+            class="flex items-center gap-2 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-cyan-500">
+            <i class="fa-solid fa-folder-open text-amber-400"></i>
+            <span id="folder-picker-label">Default Share</span>
+            <i class="fa-solid fa-chevron-down text-slate-400 text-[10px]"></i>
+          </button>
+          <div id="folder-picker-panel" role="listbox">
+            <!-- populated by loadFolders() -->
+          </div>
         </div>
         
         <div class="flex items-center space-x-2">
@@ -362,6 +382,8 @@ def get_embedded_ui_html() -> str:
       }
     }
 
+    let _allFolders = [];
+
     async function loadFolders() {
       try {
         const res = await fetch("/api/v1/folders", {
@@ -369,24 +391,77 @@ def get_embedded_ui_html() -> str:
         });
         if (res.ok) {
           const data = await res.json();
+          _allFolders = data.folders || [];
+          // Keep hidden native select in sync (for any legacy code)
           const select = document.getElementById("folder-select");
           select.innerHTML = "";
-          data.folders.forEach(f => {
+          _allFolders.forEach(f => {
             const opt = document.createElement("option");
             opt.value = f.id;
-            opt.textContent = f.name + (f.allow_write ? " (Read/Write)" : " (Read-Only)");
+            opt.textContent = f.name;
             select.appendChild(opt);
           });
-          if (data.folders.length > 0) {
-            currentFolderId = data.folders[0].id;
+          if (_allFolders.length > 0) {
+            currentFolderId = _allFolders[0].id;
+            setActiveFolderUI(_allFolders[0].id, _allFolders[0].name);
           }
+          buildFolderPickerPanel();
         }
       } catch (e) {}
     }
 
-    function onFolderChange(newFolderId) {
+    function buildFolderPickerPanel() {
+      const panel = document.getElementById("folder-picker-panel");
+      panel.innerHTML = "";
+      _allFolders.forEach(f => {
+        const btn = document.createElement("button");
+        btn.textContent = f.name + (f.allow_write ? "" : " (Read-Only)");
+        btn.dataset.folderId = f.id;
+        btn.dataset.folderName = f.name;
+        if (f.id === currentFolderId) btn.classList.add("active");
+        btn.setAttribute("role", "option");
+        btn.onclick = function() { onFolderChange(f.id, f.name); };
+        panel.appendChild(btn);
+      });
+    }
+
+    function toggleFolderPicker() {
+      const panel = document.getElementById("folder-picker-panel");
+      const isOpen = panel.style.display === "block";
+      panel.style.display = isOpen ? "none" : "block";
+      if (!isOpen) {
+        // Focus first button for TV remote nav
+        const first = panel.querySelector("button");
+        if (first) first.focus();
+      }
+    }
+
+    // Close picker when clicking outside
+    document.addEventListener("click", function(e) {
+      const btn = document.getElementById("folder-picker-btn");
+      const panel = document.getElementById("folder-picker-panel");
+      if (panel && btn && !btn.contains(e.target) && !panel.contains(e.target)) {
+        panel.style.display = "none";
+      }
+    });
+
+    function setActiveFolderUI(folderId, folderName) {
+      const label = document.getElementById("folder-picker-label");
+      if (label) label.textContent = folderName || folderId;
+      // Update active class in panel
+      const panel = document.getElementById("folder-picker-panel");
+      if (panel) {
+        panel.querySelectorAll("button").forEach(b => {
+          b.classList.toggle("active", b.dataset.folderId === folderId);
+        });
+      }
+    }
+
+    function onFolderChange(newFolderId, folderName) {
       currentFolderId = newFolderId;
       currentSubpath = "";
+      setActiveFolderUI(newFolderId, folderName);
+      document.getElementById("folder-picker-panel").style.display = "none";
       loadCurrentFolder();
     }
 

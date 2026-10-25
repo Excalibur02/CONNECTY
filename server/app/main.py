@@ -58,6 +58,7 @@ app.add_middleware(
 app.include_router(device_router)
 app.include_router(files_router)
 app.include_router(transfers_router)
+app.mount("/google_tv", StaticFiles(directory=str(Path(__file__).resolve().parent.parent / "google_tv"), html=True), name="google_tv")
 
 @app.get("/api/v1/health")
 async def health_check():

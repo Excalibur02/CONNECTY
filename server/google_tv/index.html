@@ -1,0 +1,236 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CONNECTY - Google TV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #080c14;
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image:
+        radial-gradient(ellipse at 20% 20%, rgba(6,182,212,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 80%, rgba(99,102,241,0.06) 0%, transparent 60%);
+    }
+    .card {
+      background: rgba(15,23,42,0.85);
+      border: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(16px);
+      border-radius: 24px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 460px;
+      text-align: center;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+    }
+    .logo { font-size:13px; font-weight:700; letter-spacing:0.25em; color:#06b6d4; text-transform:uppercase; margin-bottom:8px; }
+    h1 { font-size:22px; font-weight:700; color:#f1f5f9; margin-bottom:6px; }
+    .subtitle { font-size:13px; color:#64748b; margin-bottom:28px; }
+    .qr-wrap { display:inline-flex; align-items:center; justify-content:center; background:#fff; border-radius:16px; padding:12px; margin-bottom:20px; box-shadow:0 0 40px rgba(6,182,212,0.15); }
+    #qr-image { width:160px; height:160px; display:none; }
+    .qr-placeholder { width:160px; height:160px; background:#e2e8f0; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:12px; }
+    .pin-label { font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; }
+    #pin-display { font-family:'JetBrains Mono',monospace; font-size:36px; font-weight:600; letter-spacing:0.15em; color:#06b6d4; margin-bottom:6px; }
+    .pin-expire { font-size:11px; color:#475569; margin-bottom:24px; }
+    .divider { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    .divider::before, .divider::after { content:''; flex:1; height:1px; background:rgba(255,255,255,0.07); }
+    .divider span { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:0.1em; }
+    .input-row { display:flex; gap:8px; margin-bottom:12px; }
+    input { flex:1; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 14px; color:#f1f5f9; font-size:14px; font-family:inherit; outline:none; transition:border-color 0.2s; }
+    input:focus { border-color:#06b6d4; }
+    input::placeholder { color:#475569; }
+    input#manual-pin-input { font-family:'JetBrains Mono',monospace; font-size:18px; text-align:center; letter-spacing:0.15em; max-width:130px; }
+    button { width:100%; background:linear-gradient(135deg,#06b6d4,#6366f1); border:none; border-radius:12px; padding:12px 20px; color:#fff; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer; transition:opacity 0.2s,transform 0.1s; }
+    button:hover { opacity:0.9; }
+    button:active { transform:scale(0.98); }
+    button.secondary { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#94a3b8; font-size:13px; padding:9px; margin-top:8px; }
+    button.secondary:hover { background:rgba(255,255,255,0.08); }
+    #folder-section { display:none; }
+    .section-divider { height:1px; background:rgba(255,255,255,0.07); margin:28px 0; }
+    .folder-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .folder-title { font-size:13px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; }
+    .badge { font-size:11px; background:rgba(6,182,212,0.15); color:#06b6d4; border:1px solid rgba(6,182,212,0.3); border-radius:20px; padding:2px 10px; }
+    select { width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 14px; color:#f1f5f9; font-size:14px; font-family:inherit; outline:none; cursor:pointer; margin-bottom:10px; transition:border-color 0.2s; appearance:none; }
+    select:focus { border-color:#06b6d4; }
+    select option { background:#0f172a; }
+    .status-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#22c55e; margin-right:6px; animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .paired-status { font-size:12px; color:#22c55e; margin-bottom:16px; display:none; }
+    .error-msg { font-size:12px; color:#f87171; margin-top:8px; display:none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">CONNECTY</div>
+    <h1>Google TV</h1>
+    <p class="subtitle">Pair your TV to access shared folders from your laptop</p>
+    <div class="paired-status" id="paired-status"><span class="status-dot"></span>Paired &amp; Connected</div>
+    <div id="pairing-section">
+      <div class="qr-wrap">
+        <div class="qr-placeholder" id="qr-placeholder">Loading...</div>
+        <img id="qr-image" src="" alt="QR Code" />
+      </div>
+      <div class="pin-label">Pairing PIN</div>
+      <div id="pin-display">------</div>
+      <div class="pin-expire">Scan QR or enter PIN below</div>
+      <div class="divider"><span>or enter manually</span></div>
+      <div class="input-row">
+        <input type="text" id="manual-pin-input" maxlength="6" placeholder="123456" inputmode="numeric" />
+        <input type="text" id="device-name-input" placeholder="My Google TV" />
+      </div>
+      <button onclick="pairDevice()" id="pair-btn">Pair Device</button>
+      <div class="error-msg" id="error-msg"></div>
+    </div>
+    <div id="folder-section">
+      <div class="section-divider"></div>
+      <div class="folder-header">
+        <span class="folder-title">Shared Folders</span>
+        <span class="badge" id="folder-count">0 folders</span>
+      </div>
+      <select id="folder-select"><option value="" disabled selected>Loading folders...</option></select>
+      <button onclick="browseFolder()">Browse Selected Folder</button>
+      <button class="secondary" onclick="unpair()">Unpair Device</button>
+    </div>
+  </div>
+  <script>
+    (async function init() {
+      var token = localStorage.getItem('connecty_token');
+      if (token) {
+        showPairedState();
+        await loadSharedFolders(token);
+      } else {
+        await loadPairingInfo();
+      }
+    })();
+
+    async function loadPairingInfo() {
+      try {
+        var res = await fetch('/api/v1/pairing/pin');
+        if (res.ok) {
+          var data = await res.json();
+          document.getElementById('pin-display').textContent = data.pin;
+          var img = document.getElementById('qr-image');
+          var ph = document.getElementById('qr-placeholder');
+          img.src = data.qr_code_data_url;
+          img.style.display = 'block';
+          ph.style.display = 'none';
+        }
+      } catch(e) { console.error('loadPairingInfo error:', e); }
+    }
+
+    async function pairDevice() {
+      var pin = document.getElementById('manual-pin-input').value.trim();
+      var name = document.getElementById('device-name-input').value.trim() || 'Google TV';
+      var errEl = document.getElementById('error-msg');
+      errEl.style.display = 'none';
+      if (!pin || pin.length < 4) {
+        errEl.textContent = 'Please enter the pairing PIN.';
+        errEl.style.display = 'block';
+        return;
+      }
+      var btn = document.getElementById('pair-btn');
+      btn.textContent = 'Pairing...';
+      btn.disabled = true;
+      try {
+        var res = await fetch('/api/v1/pairing/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_id: 'tv_' + Math.random().toString(36).substring(2, 10),
+            device_name: name,
+            platform: 'tv',
+            pin_code: pin,
+            requested_role: 'full',
+            pairing_type: 'temporary'
+          })
+        });
+        if (res.ok) {
+          var data = await res.json();
+          localStorage.setItem('connecty_token', data.token);
+          showPairedState();
+          await loadSharedFolders(data.token);
+        } else {
+          var err = await res.json();
+          errEl.textContent = 'Error: ' + (err.detail || 'Pairing failed. Check the PIN.');
+          errEl.style.display = 'block';
+          btn.textContent = 'Pair Device';
+          btn.disabled = false;
+        }
+      } catch(e) {
+        errEl.textContent = 'Network error. Make sure the server is running.';
+        errEl.style.display = 'block';
+        btn.textContent = 'Pair Device';
+        btn.disabled = false;
+      }
+    }
+
+    function showPairedState() {
+      document.getElementById('paired-status').style.display = 'block';
+      document.getElementById('folder-section').style.display = 'block';
+    }
+
+    async function loadSharedFolders(token) {
+      if (!token) token = localStorage.getItem('connecty_token');
+      if (!token) return;
+      try {
+        var res = await fetch('/api/v1/folders', {
+          headers: { 'X-Device-Token': token }
+        });
+        if (res.ok) {
+          var data = await res.json();
+          var select = document.getElementById('folder-select');
+          var badge = document.getElementById('folder-count');
+          select.innerHTML = '';
+          if (data.folders && data.folders.length > 0) {
+            data.folders.forEach(function(f) {
+              var opt = document.createElement('option');
+              opt.value = f.id;
+              opt.textContent = f.name + (f.allow_write ? '' : ' (Read-Only)');
+              select.appendChild(opt);
+            });
+            select.selectedIndex = 0;
+            badge.textContent = data.folders.length + ' folder' + (data.folders.length !== 1 ? 's' : '');
+          } else {
+            select.innerHTML = '<option value="" disabled selected>No shared folders configured</option>';
+            badge.textContent = '0 folders';
+          }
+        } else if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem('connecty_token');
+          document.getElementById('paired-status').style.display = 'none';
+          document.getElementById('folder-section').style.display = 'none';
+          await loadPairingInfo();
+        }
+      } catch(e) { console.error('loadSharedFolders error:', e); }
+    }
+
+    function browseFolder() {
+      var select = document.getElementById('folder-select');
+      var folderId = select.value;
+      if (!folderId) return;
+      var token = localStorage.getItem('connecty_token');
+      window.location.href = '/?folder=' + encodeURIComponent(folderId) + '&token=' + encodeURIComponent(token);
+    }
+
+    function unpair() {
+      if (!confirm('Unpair this device?')) return;
+      localStorage.removeItem('connecty_token');
+      document.getElementById('paired-status').style.display = 'none';
+      document.getElementById('folder-section').style.display = 'none';
+      var btn = document.getElementById('pair-btn');
+      btn.textContent = 'Pair Device';
+      btn.disabled = false;
+      document.getElementById('manual-pin-input').value = '';
+      loadPairingInfo();
+    }
+  </script>
+</body>
+</html>
